@@ -37,8 +37,12 @@ def create_table(table_name: str, columns: List[dict]) -> dict[str, Any]:
         # Create column definitions
         col_definitions = []
         for col in columns:
-            col_name = col.get("name", "").lower()
-            col_type = col.get("type", "TEXT").upper()
+            if isinstance(col, dict):
+                col_name = col.get("name", "").lower()
+                col_type = str(col.get("type", "TEXT")).upper()
+            else:
+                col_name = getattr(col, "name", "").lower()
+                col_type = str(getattr(col, "type", "TEXT")).upper()
             
             if col_type not in type_map:
                 return {"error": f"Invalid type: {col_type}"}

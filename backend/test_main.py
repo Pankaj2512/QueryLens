@@ -192,6 +192,50 @@ class TestErrorHandling:
         assert response.status_code in [422, 400]
 
 
+class TestExportEndpoints:
+    """Tests for table data export in CSV and JSON formats."""
+
+    @pytest.fixture(autouse=True)
+    def create_sample_table(self):
+        """Ensure a sample table exists for export testing."""
+        payload = {
+            "name": "export_test_table",
+            "columns": [
+                {"name": "id", "type": "INTEGER"},
+                {"name": "item", "type": "TEXT"},
+                {"name": "price", "type": "REAL"}
+            ]
+        }
+        client.post("/create-table", json=payload)
+
+    def test_export_csv_success(self):
+        """Test exporting table as CSV."""
+        response = client.get("/export/export_test_table?format=csv")
+        assert response.status_code == 200
+        assert "text/csv" in response.headers.get("content-type", "")
+        assert 'attachment; filename="export_test_table.csv"' in response.headers.get("content-disposition", "")
+        assert "id,item,price" in response.text
+
+    def test_export_json_success(self):
+        """Test exporting table as structured JSON records."""
+        response = client.get("/export/export_test_table?format=json")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["table_name"] == "export_test_table"
+        assert "data" in data
+        assert isinstance(data["data"], list)
+
+    def test_export_nonexistent_table(self):
+        """Test exporting a table that does not exist returns 404."""
+        response = client.get("/export/nonexistent_table_xyz?format=csv")
+        assert response.status_code == 404
+
+    def test_export_invalid_format(self):
+        """Test exporting with invalid format parameter returns validation error."""
+        response = client.get("/export/export_test_table?format=xml")
+        assert response.status_code in [422, 400]
+
+
 @pytest.fixture(scope="session", autouse=True)
 def setup():
     """Setup test session."""

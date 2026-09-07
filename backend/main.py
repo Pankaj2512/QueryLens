@@ -216,6 +216,7 @@ async def create_table(request: Request, payload: CreateTableRequest) -> dict[st
         db = SessionLocal()
         try:
             uploaded_file = UploadedFile(
+                filename=f"{payload.name}_manual.csv",
                 table_name=payload.name,
                 original_name=f"{payload.name}_manual",
                 row_count=0,
