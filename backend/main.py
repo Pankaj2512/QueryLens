@@ -1,6 +1,6 @@
 """FastAPI application for QueryLens."""
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, File, UploadFile, HTTPException, Request
+from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Response, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -35,6 +35,7 @@ from database import (
     get_table_schema,
     get_sample_data,
     save_query_history,
+    export_table_data,
     DATA_DIR,
     MAX_QUERY_ROWS,
     MAX_HISTORY_LIMIT,
@@ -410,6 +411,40 @@ async def get_stats(request: Request) -> dict:
     return {
         "database": get_database_stats(),
     }
+
+
+@app.get("/export/{table_name}")
+@limiter.limit("30/minute")
+async def export_table(
+    request: Request,
+    table_name: str,
+    format: str = Query("csv", pattern=r"^(csv|json)$"),
+    limit: int = Query(1000, ge=1, le=10000),
+    offset: int = Query(0, ge=0)
+):
+    """Export table data as CSV file download or structured JSON records."""
+    if not is_valid_identifier(table_name):
+        raise HTTPException(status_code=400, detail="Invalid table name")
+
+    tables = get_tables()
+    if table_name not in tables:
+        raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found")
+
+    result = export_table_data(table_name, format=format, limit=limit, offset=offset)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    if format == "csv":
+        return Response(
+            content=result["content"],
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{table_name}.csv"'}
+        )
+    return JSONResponse(content={
+        "table_name": table_name,
+        "row_count": result["row_count"],
+        "data": result["data"]
+    })
 
 
 if __name__ == "__main__":

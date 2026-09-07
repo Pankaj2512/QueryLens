@@ -192,3 +192,32 @@ def save_query_history(
     db.add(history)
     db.commit()
     db.close()
+
+
+def export_table_data(
+    table_name: str,
+    format: str = "csv",
+    limit: int = 1000,
+    offset: int = 0
+) -> dict[str, Any]:
+    """Export table data as CSV string or structured JSON records."""
+    if not is_valid_identifier(table_name):
+        return {"error": "Invalid table name"}
+    try:
+        effective_limit = max(1, min(limit, 10000))
+        effective_offset = max(0, offset)
+        df = pd.read_sql(
+            text(f"SELECT * FROM {table_name} LIMIT :limit OFFSET :offset"),
+            engine,
+            params={"limit": effective_limit, "offset": effective_offset}
+        )
+        if format.lower() == "csv":
+            content = df.to_csv(index=False)
+            return {"success": True, "format": "csv", "content": content, "row_count": len(df)}
+        elif format.lower() == "json":
+            content = df.to_dict(orient="records")
+            return {"success": True, "format": "json", "data": content, "row_count": len(df)}
+        else:
+            return {"error": f"Unsupported format '{format}'. Supported formats: 'csv', 'json'"}
+    except Exception as e:
+        return {"error": str(e)}
