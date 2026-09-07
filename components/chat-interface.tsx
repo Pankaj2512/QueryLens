@@ -166,6 +166,7 @@ export default function ChatInterface({ tableName, onQuery, loading }: ChatInter
                     <div className="ml-0">
                       <QueryResults
                         results={msg.results}
+                        tableName={msg.tableName || tableName}
                         onLoadMore={msg.results?.has_more ? () => handleLoadMore(idx) : undefined}
                         loadingMore={loadingMoreForMessage === idx}
                       />

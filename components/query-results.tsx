@@ -4,6 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
+import { Download } from 'lucide-react';
 
 interface QueryResultsProps {
   results: {
@@ -14,11 +15,41 @@ interface QueryResultsProps {
     offset?: number;
     has_more?: boolean;
   };
+  tableName?: string;
   onLoadMore?: () => void;
   loadingMore?: boolean;
 }
 
-export default function QueryResults({ results, onLoadMore, loadingMore = false }: QueryResultsProps) {
+export default function QueryResults({ results, tableName, onLoadMore, loadingMore = false }: QueryResultsProps) {
+  const downloadCsv = () => {
+    if (!results.data || results.data.length === 0) return;
+    const headers = results.columns.join(',');
+    const rows = results.data.map(row => 
+      results.columns.map(col => {
+        const val = row[col] ?? '';
+        return `"${String(val).replace(/"/g, '""')}"`;
+      }).join(',')
+    );
+    const csvContent = "data:text/csv;charset=utf-8," + encodeURIComponent([headers, ...rows].join('\n'));
+    const link = document.createElement("a");
+    link.setAttribute("href", csvContent);
+    link.setAttribute("download", `${tableName || 'query_results'}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const downloadJson = () => {
+    if (!results.data || results.data.length === 0) return;
+    const jsonContent = "data:application/json;charset=utf-8," + encodeURIComponent(JSON.stringify(results.data, null, 2));
+    const link = document.createElement("a");
+    link.setAttribute("href", jsonContent);
+    link.setAttribute("download", `${tableName || 'query_results'}.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   if (!results.data || results.data.length === 0) {
     return (
       <Card>
@@ -31,14 +62,26 @@ export default function QueryResults({ results, onLoadMore, loadingMore = false 
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Results</CardTitle>
-        <CardDescription>
-          {results.row_count} rows returned
-          {typeof results.offset === 'number' && typeof results.limit === 'number'
-            ? ` (offset ${results.offset}, page size ${results.limit})`
-            : ''}
-        </CardDescription>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+        <div>
+          <CardTitle className="text-base">Results</CardTitle>
+          <CardDescription>
+            {results.row_count} rows returned
+            {typeof results.offset === 'number' && typeof results.limit === 'number'
+              ? ` (offset ${results.offset}, page size ${results.limit})`
+              : ''}
+          </CardDescription>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={downloadCsv} className="h-7 gap-1 px-2 text-xs">
+            <Download className="h-3.5 w-3.5" />
+            CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={downloadJson} className="h-7 gap-1 px-2 text-xs">
+            <Download className="h-3.5 w-3.5" />
+            JSON
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         <ScrollArea className="w-full">

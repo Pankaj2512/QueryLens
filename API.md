@@ -274,6 +274,47 @@ GET /history?table_name=users&limit=50
 
 ---
 
+### Export Table Data
+
+Export data from an uploaded or created dataset in either `csv` (file download) or `json` (structured array) format.
+
+```http
+GET /export/{table_name}?format=csv&limit=1000&offset=0
+```
+
+**Path Parameters:**
+- `table_name` (string, required) - Valid database table identifier
+
+**Query Parameters:**
+- `format` (string, optional, default: `"csv"`) - Output format: `csv` or `json`
+- `limit` (integer, optional, default: `1000`, range: `1..10000`) - Row limit
+- `offset` (integer, optional, default: `0`) - Row offset for pagination
+
+**Response (CSV):**
+- Content-Type: `text/csv`
+- Header: `Content-Disposition: attachment; filename="{table_name}.csv"`
+- Body: Comma-separated values stream
+
+**Response (JSON):**
+```json
+{
+  "table_name": "users",
+  "row_count": 2,
+  "data": [
+    { "id": 1, "name": "Alice", "role": "admin" },
+    { "id": 2, "name": "Bob", "role": "user" }
+  ]
+}
+```
+
+**Status Codes:**
+- `200` - Export generated successfully
+- `400` - Invalid table name or format parameter
+- `404` - Table not found
+- `429` - Rate limit exceeded (30 requests/minute)
+
+---
+
 ## Error Handling
 
 All errors follow this format:

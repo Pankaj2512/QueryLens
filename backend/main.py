@@ -215,14 +215,19 @@ async def create_table(request: Request, payload: CreateTableRequest) -> dict[st
         # Store metadata in database
         db = SessionLocal()
         try:
-            uploaded_file = UploadedFile(
-                filename=f"{payload.name}_manual.csv",
-                table_name=payload.name,
-                original_name=f"{payload.name}_manual",
-                row_count=0,
-                columns=json.dumps([{"name": col.name, "type": col.type} for col in payload.columns]),
-            )
-            db.add(uploaded_file)
+            existing = db.query(UploadedFile).filter_by(table_name=payload.name).first()
+            if existing:
+                existing.columns = json.dumps([{"name": col.name, "type": col.type} for col in payload.columns])
+                existing.row_count = 0
+            else:
+                uploaded_file = UploadedFile(
+                    filename=f"{payload.name}_manual.csv",
+                    table_name=payload.name,
+                    original_name=f"{payload.name}_manual",
+                    row_count=0,
+                    columns=json.dumps([{"name": col.name, "type": col.type} for col in payload.columns]),
+                )
+                db.add(uploaded_file)
             db.commit()
         finally:
             db.close()
