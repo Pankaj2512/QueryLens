@@ -315,6 +315,54 @@ GET /export/{table_name}?format=csv&limit=1000&offset=0
 
 ---
 
+### Explain Query Plan
+
+Inspect and analyze the execution plan of a SQL query using SQLite's query planner. Detects full table scans, index lookups, temporary B-trees, and returns actionable performance recommendations.
+
+```http
+POST /explain
+Content-Type: application/json
+
+{
+  "sql": "SELECT * FROM users WHERE active = 1",
+  "table_name": "users"
+}
+```
+
+**Request Body:**
+- `sql` (string, required) - Valid SELECT statement to analyze
+- `table_name` (string, required) - Target table identifier (must match query scope)
+
+**Response:**
+```json
+{
+  "success": true,
+  "table_name": "users",
+  "sql": "SELECT * FROM users WHERE active = 1",
+  "steps": [
+    {
+      "id": 2,
+      "parent": 0,
+      "detail": "SCAN TABLE users",
+      "scan_type": "FULL_TABLE_SCAN"
+    }
+  ],
+  "has_full_table_scan": true,
+  "uses_index": false,
+  "uses_temp_btree": false,
+  "performance_tier": "MODERATE",
+  "recommendation": "Full table scan detected. Consider creating an index on filtered or joined columns to optimize query performance."
+}
+```
+
+**Status Codes:**
+- `200` - Query plan analyzed successfully
+- `400` - Invalid SQL syntax, disallowed DDL/DML, or table mismatch
+- `404` - Table not found
+- `429` - Rate limit exceeded (30 requests/minute)
+
+---
+
 ## Error Handling
 
 All errors follow this format:
