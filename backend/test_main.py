@@ -236,6 +236,71 @@ class TestExportEndpoints:
         assert response.status_code in [422, 400]
 
 
+class TestExplainEndpoint:
+    """Tests for SQL EXPLAIN QUERY PLAN analysis endpoint."""
+
+    @pytest.fixture(autouse=True)
+    def create_sample_table(self):
+        """Ensure a sample table exists for explain testing."""
+        payload = {
+            "name": "explain_test_table",
+            "columns": [
+                {"name": "id", "type": "INTEGER"},
+                {"name": "category", "type": "TEXT"},
+                {"name": "amount", "type": "REAL"},
+            ]
+        }
+        client.post("/create-table", json=payload)
+
+    def test_explain_valid_select_query(self):
+        """Test explaining a valid SELECT query."""
+        payload = {
+            "sql": "SELECT * FROM explain_test_table WHERE category = 'books'",
+            "table_name": "explain_test_table",
+        }
+        response = client.post("/explain", json=payload)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["table_name"] == "explain_test_table"
+        assert "steps" in data
+        assert isinstance(data["steps"], list)
+        assert "performance_tier" in data
+        assert "recommendation" in data
+
+    def test_explain_nonexistent_table(self):
+        """Test explaining a query against a nonexistent table returns 404."""
+        payload = {
+            "sql": "SELECT * FROM nonexistent_table_xyz",
+            "table_name": "nonexistent_table_xyz",
+        }
+        response = client.post("/explain", json=payload)
+        assert response.status_code == 404
+
+    def test_explain_blocks_forbidden_dml(self):
+        """Test that disallowed SQL statements (DROP/DELETE) are blocked."""
+        payload = {
+            "sql": "DROP TABLE explain_test_table",
+            "table_name": "explain_test_table",
+        }
+        response = client.post("/explain", json=payload)
+        assert response.status_code == 400
+
+    def test_explain_invalid_sql_syntax(self):
+        """Test explaining malformed SQL returns 400 error."""
+        payload = {
+            "sql": "SELECT FROM WHERE",
+            "table_name": "explain_test_table",
+        }
+        response = client.post("/explain", json=payload)
+        assert response.status_code == 400
+
+    def test_explain_empty_body(self):
+        """Test explaining with empty body returns validation error."""
+        response = client.post("/explain", json={})
+        assert response.status_code in [422, 400]
+
+
 @pytest.fixture(scope="session", autouse=True)
 def setup():
     """Setup test session."""
