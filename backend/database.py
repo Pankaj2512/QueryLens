@@ -225,3 +225,64 @@ def export_table_data(
             return {"error": f"Unsupported format '{format}'. Supported formats: 'csv', 'json'"}
     except Exception as e:
         return {"error": str(e)}
+
+
+def explain_query_plan(sql: str, table_name: str) -> dict[str, Any]:
+    """Execute EXPLAIN QUERY PLAN on the given SQL and parse performance characteristics."""
+    if not is_valid_identifier(table_name):
+        return {"error": "Invalid table name"}
+    try:
+        clean_sql = sql.strip().rstrip(";")
+        explain_sql = f"EXPLAIN QUERY PLAN {clean_sql}"
+        with engine.connect() as conn:
+            result = conn.execute(text(explain_sql))
+            rows = result.fetchall()
+
+        steps = []
+        has_full_table_scan = False
+        uses_index = False
+        uses_temp_btree = False
+
+        for row in rows:
+            detail = str(row[3]) if len(row) > 3 else str(row[-1])
+            step_info = {
+                "id": int(row[0]),
+                "parent": int(row[1]),
+                "detail": detail,
+            }
+            if "SCAN TABLE" in detail and "USING INDEX" not in detail and "USING COVERING INDEX" not in detail:
+                has_full_table_scan = True
+                step_info["scan_type"] = "FULL_TABLE_SCAN"
+            elif "USING INDEX" in detail or "USING COVERING INDEX" in detail:
+                uses_index = True
+                step_info["scan_type"] = "INDEX_SCAN"
+            elif "USE TEMP B-TREE" in detail:
+                uses_temp_btree = True
+                step_info["scan_type"] = "TEMP_BTREE"
+            else:
+                step_info["scan_type"] = "SEARCH"
+            steps.append(step_info)
+
+        if has_full_table_scan:
+            recommendation = "Full table scan detected. Consider creating an index on filtered or joined columns to optimize query performance."
+            performance_tier = "MODERATE"
+        elif uses_index:
+            recommendation = "Optimal query execution using index lookups."
+            performance_tier = "OPTIMAL"
+        else:
+            recommendation = "Standard table search without excessive scan overhead."
+            performance_tier = "STANDARD"
+
+        return {
+            "success": True,
+            "table_name": table_name,
+            "sql": clean_sql,
+            "steps": steps,
+            "has_full_table_scan": has_full_table_scan,
+            "uses_index": uses_index,
+            "uses_temp_btree": uses_temp_btree,
+            "performance_tier": performance_tier,
+            "recommendation": recommendation,
+        }
+    except Exception as e:
+        return {"error": str(e)}

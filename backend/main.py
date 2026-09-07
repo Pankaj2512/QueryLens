@@ -36,6 +36,7 @@ from database import (
     get_sample_data,
     save_query_history,
     export_table_data,
+    explain_query_plan,
     DATA_DIR,
     MAX_QUERY_ROWS,
     MAX_HISTORY_LIMIT,
@@ -101,6 +102,17 @@ class QueryRequest(BaseModel):
         max_length=128,
         description="Optional. Requires ALLOW_CLIENT_LLM_CONFIG=true; otherwise ignored.",
     )
+
+
+class ExplainRequest(BaseModel):
+    sql: str = Field(..., min_length=1, max_length=5000)
+    table_name: str = Field(..., min_length=1, max_length=255)
+
+    @validator('table_name')
+    def validate_table_name(cls, v):
+        if not is_valid_identifier(v):
+            raise ValueError('Invalid table name format')
+        return v
 
 
 @asynccontextmanager
@@ -451,6 +463,25 @@ async def export_table(
         "row_count": result["row_count"],
         "data": result["data"]
     })
+
+
+@app.post("/explain")
+@limiter.limit("30/minute")
+async def explain_query(request: Request, payload: ExplainRequest) -> dict[str, Any]:
+    """Analyze and explain a SQL query execution plan."""
+    tables = get_tables()
+    if payload.table_name not in tables:
+        raise HTTPException(status_code=404, detail=f"Table '{payload.table_name}' not found")
+
+    is_valid, validation_error = validate_sql(payload.sql, {payload.table_name})
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=validation_error or "Invalid SQL query")
+
+    result = explain_query_plan(payload.sql, payload.table_name)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    return result
 
 
 if __name__ == "__main__":
