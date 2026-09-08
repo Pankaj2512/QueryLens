@@ -286,3 +286,165 @@ def explain_query_plan(sql: str, table_name: str) -> dict[str, Any]:
         }
     except Exception as e:
         return {"error": str(e)}
+
+
+def get_table_profile(table_name: str) -> dict[str, Any]:
+    """Compute comprehensive statistical profile and data quality metrics for a table."""
+    if not is_valid_identifier(table_name):
+        return {"error": "Invalid table name"}
+    try:
+        inspector = inspect(engine)
+        tables = inspector.get_table_names()
+        if table_name not in tables:
+            return {"error": f"Table '{table_name}' not found"}
+
+        columns = inspector.get_columns(table_name)
+        if not columns:
+            return {"error": f"Table '{table_name}' has no columns"}
+
+        with engine.connect() as conn:
+            total_rows_res = conn.execute(text(f'SELECT COUNT(*) FROM "{table_name}"'))
+            total_rows = int(total_rows_res.scalar() or 0)
+
+            column_profiles = []
+            columns_with_nulls = []
+            primary_key_candidates = []
+            constant_columns = []
+
+            for col in columns:
+                col_name = col["name"]
+                col_type_str = str(col["type"]).upper()
+                is_numeric = any(t in col_type_str for t in ("INT", "REAL", "FLOAT", "NUMERIC", "DOUBLE"))
+
+                if total_rows == 0:
+                    profile = {
+                        "name": col_name,
+                        "type": col_type_str,
+                        "total_count": 0,
+                        "null_count": 0,
+                        "null_percentage": 0.0,
+                        "distinct_count": 0,
+                        "uniqueness_ratio": 0.0,
+                        "min_value": None,
+                        "max_value": None,
+                        "mean_value": None,
+                        "median_value": None,
+                        "zero_count": 0 if is_numeric else None,
+                        "min_length": None,
+                        "max_length": None,
+                        "avg_length": None,
+                        "top_values": [],
+                        "quality_flags": ["EMPTY_TABLE"],
+                    }
+                    column_profiles.append(profile)
+                    continue
+
+                # Basic counts
+                cnt_res = conn.execute(text(f'SELECT COUNT("{col_name}"), COUNT(DISTINCT "{col_name}") FROM "{table_name}"'))
+                non_null_count, distinct_count = cnt_res.fetchone()
+                non_null_count = int(non_null_count or 0)
+                distinct_count = int(distinct_count or 0)
+                null_count = total_rows - non_null_count
+                null_pct = round((null_count / total_rows) * 100.0, 2)
+                uniqueness = round(distinct_count / total_rows, 4) if total_rows > 0 else 0.0
+
+                min_val = None
+                max_val = None
+                mean_val = None
+                median_val = None
+                zero_count = None
+                min_len = None
+                max_len = None
+                avg_len = None
+
+                if is_numeric and non_null_count > 0:
+                    num_query = f'SELECT MIN("{col_name}"), MAX("{col_name}"), AVG("{col_name}"), SUM(CASE WHEN "{col_name}" = 0 THEN 1 ELSE 0 END) FROM "{table_name}" WHERE "{col_name}" IS NOT NULL'
+                    min_v, max_v, avg_v, zeros = conn.execute(text(num_query)).fetchone()
+                    min_val = min_v
+                    max_val = max_v
+                    mean_val = round(float(avg_v), 4) if avg_v is not None else None
+                    zero_count = int(zeros or 0)
+
+                    # Median
+                    offset = max(0, (non_null_count - 1) // 2)
+                    med_query = f'SELECT "{col_name}" FROM "{table_name}" WHERE "{col_name}" IS NOT NULL ORDER BY "{col_name}" ASC LIMIT 1 OFFSET {offset}'
+                    med_res = conn.execute(text(med_query)).scalar()
+                    median_val = float(med_res) if med_res is not None else None
+
+                elif any(t in col_type_str for t in ("TEXT", "CHAR", "VARCHAR", "STRING")) and non_null_count > 0:
+                    len_query = f'SELECT MIN(LENGTH("{col_name}")), MAX(LENGTH("{col_name}")), AVG(LENGTH("{col_name}")) FROM "{table_name}" WHERE "{col_name}" IS NOT NULL'
+                    min_l, max_l, avg_l = conn.execute(text(len_query)).fetchone()
+                    min_len = int(min_l) if min_l is not None else None
+                    max_len = int(max_l) if max_l is not None else None
+                    avg_len = round(float(avg_l), 2) if avg_l is not None else None
+
+                # Top values
+                top_query = f'SELECT "{col_name}", COUNT(*) as cnt FROM "{table_name}" WHERE "{col_name}" IS NOT NULL GROUP BY "{col_name}" ORDER BY cnt DESC LIMIT 5'
+                top_rows = conn.execute(text(top_query)).fetchall()
+                top_values = [
+                    {
+                        "value": r[0],
+                        "count": int(r[1]),
+                        "percentage": round((int(r[1]) / total_rows) * 100.0, 2),
+                    }
+                    for r in top_rows
+                ]
+
+                # Quality flags
+                flags = []
+                if distinct_count == total_rows and null_count == 0 and total_rows > 0:
+                    flags.append("PRIMARY_KEY_CANDIDATE")
+                    primary_key_candidates.append(col_name)
+                if null_pct >= 50.0 and null_count < total_rows:
+                    flags.append("HIGH_NULLS")
+                elif null_count == total_rows:
+                    flags.append("ALL_NULLS")
+                if distinct_count == 1 and null_count == 0:
+                    flags.append("CONSTANT")
+                    constant_columns.append(col_name)
+                elif uniqueness >= 0.90 and distinct_count < total_rows:
+                    flags.append("HIGH_CARDINALITY")
+
+                if null_count > 0:
+                    columns_with_nulls.append(col_name)
+
+                column_profiles.append({
+                    "name": col_name,
+                    "type": col_type_str,
+                    "total_count": total_rows,
+                    "null_count": null_count,
+                    "null_percentage": null_pct,
+                    "distinct_count": distinct_count,
+                    "uniqueness_ratio": uniqueness,
+                    "min_value": min_val,
+                    "max_value": max_val,
+                    "mean_value": mean_val,
+                    "median_value": median_val,
+                    "zero_count": zero_count,
+                    "min_length": min_len,
+                    "max_length": max_len,
+                    "avg_length": avg_len,
+                    "top_values": top_values,
+                    "quality_flags": flags,
+                })
+
+            quality_summary = {
+                "total_rows": total_rows,
+                "total_columns": len(columns),
+                "has_missing_data": len(columns_with_nulls) > 0,
+                "columns_with_nulls": columns_with_nulls,
+                "primary_key_candidates": primary_key_candidates,
+                "constant_columns": constant_columns,
+            }
+
+            return {
+                "success": True,
+                "table_name": table_name,
+                "row_count": total_rows,
+                "column_count": len(columns),
+                "columns": column_profiles,
+                "quality_summary": quality_summary,
+            }
+    except Exception as e:
+        return {"error": str(e)}
+
