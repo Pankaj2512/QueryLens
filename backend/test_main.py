@@ -301,6 +301,103 @@ class TestExplainEndpoint:
         assert response.status_code in [422, 400]
 
 
+class TestProfileEndpoint:
+    """Tests for Table Profiling and Column Statistics endpoint."""
+
+    @pytest.fixture(autouse=True)
+    def setup_profile_table(self):
+        """Create and populate a sample table with known distributions."""
+        table_name = "profile_test_table"
+        create_payload = {
+            "name": table_name,
+            "columns": [
+                {"name": "user_id", "type": "INTEGER"},
+                {"name": "username", "type": "TEXT"},
+                {"name": "score", "type": "REAL"},
+                {"name": "is_active", "type": "BOOLEAN"},
+            ]
+        }
+        client.post("/create-table", json=create_payload)
+
+        from database import engine
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text(f"DELETE FROM {table_name}"))
+            conn.execute(text(f"""
+                INSERT INTO {table_name} (user_id, username, score, is_active) VALUES
+                (1, 'alice', 95.5, 1),
+                (2, 'bob', 80.0, 1),
+                (3, 'charlie', 70.0, 0),
+                (4, 'alice', NULL, 1)
+            """))
+            conn.commit()
+
+    def test_profile_table_numeric_stats(self):
+        """Test numeric column statistical calculations."""
+        response = client.get("/profile/profile_test_table")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["table_name"] == "profile_test_table"
+        assert data["row_count"] == 4
+        assert data["column_count"] == 4
+
+        # Find user_id column (primary key candidate)
+        user_id_col = next(c for c in data["columns"] if c["name"] == "user_id")
+        assert user_id_col["total_count"] == 4
+        assert user_id_col["null_count"] == 0
+        assert user_id_col["distinct_count"] == 4
+        assert user_id_col["uniqueness_ratio"] == 1.0
+        assert user_id_col["min_value"] == 1
+        assert user_id_col["max_value"] == 4
+        assert "PRIMARY_KEY_CANDIDATE" in user_id_col["quality_flags"]
+
+        # Find score column (has nulls)
+        score_col = next(c for c in data["columns"] if c["name"] == "score")
+        assert score_col["null_count"] == 1
+        assert score_col["null_percentage"] == 25.0
+        assert score_col["min_value"] == 70.0
+        assert score_col["max_value"] == 95.5
+        assert score_col["mean_value"] is not None
+
+    def test_profile_table_text_stats(self):
+        """Test text column lengths and frequent values distribution."""
+        response = client.get("/profile/profile_test_table")
+        assert response.status_code == 200
+        data = response.json()
+
+        username_col = next(c for c in data["columns"] if c["name"] == "username")
+        assert username_col["total_count"] == 4
+        assert username_col["null_count"] == 0
+        assert username_col["min_length"] == 3  # 'bob'
+        assert username_col["max_length"] == 7  # 'charlie'
+        assert len(username_col["top_values"]) > 0
+        alice_entry = next((v for v in username_col["top_values"] if v["value"] == "alice"), None)
+        assert alice_entry is not None
+        assert alice_entry["count"] == 2
+
+    def test_profile_quality_summary(self):
+        """Test table quality overview flags and missingness summary."""
+        response = client.get("/profile/profile_test_table")
+        assert response.status_code == 200
+        summary = response.json()["quality_summary"]
+        assert summary["total_rows"] == 4
+        assert summary["has_missing_data"] is True
+        assert "score" in summary["columns_with_nulls"]
+        assert "user_id" in summary["primary_key_candidates"]
+
+    def test_profile_nonexistent_table(self):
+        """Test profiling nonexistent table returns 404."""
+        response = client.get("/profile/nonexistent_table_xyz")
+        assert response.status_code == 404
+
+    def test_profile_invalid_table_name(self):
+        """Test profiling invalid table name returns 400."""
+        response = client.get("/profile/invalid;table--")
+        assert response.status_code == 400
+
+
+
 @pytest.fixture(scope="session", autouse=True)
 def setup():
     """Setup test session."""
