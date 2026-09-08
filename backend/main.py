@@ -37,11 +37,13 @@ from database import (
     save_query_history,
     export_table_data,
     explain_query_plan,
+    get_table_profile,
     DATA_DIR,
     MAX_QUERY_ROWS,
     MAX_HISTORY_LIMIT,
     is_valid_identifier,
 )
+from profiling_models import TableProfileResponse
 from llm import generate_sql_from_nl, validate_sql
 from models import SessionLocal, UploadedFile, QueryHistory
 from health import HealthChecker, get_database_stats
@@ -482,6 +484,25 @@ async def explain_query(request: Request, payload: ExplainRequest) -> dict[str, 
         raise HTTPException(status_code=400, detail=result["error"])
 
     return result
+
+
+@app.get("/profile/{table_name}", response_model=TableProfileResponse)
+@limiter.limit("30/minute")
+async def profile_table(request: Request, table_name: str) -> dict[str, Any]:
+    """Compute comprehensive statistical profile and data quality metrics for a table."""
+    if not is_valid_identifier(table_name):
+        raise HTTPException(status_code=400, detail="Invalid table name format")
+
+    tables = get_tables()
+    if table_name not in tables:
+        raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found")
+
+    result = get_table_profile(table_name)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    return result
+
 
 
 if __name__ == "__main__":
