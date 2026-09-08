@@ -15,12 +15,16 @@ QueryLens is a modern, production-grade full-stack application that transforms c
 - **Drag-and-Drop CSV Ingestion**: Instant schema inference and automated SQLite table generation with type detection.
 - **Natural Language to SQL**: Converts plain English questions into valid, syntactically correct SQL queries via Google Gemini (`gemini-2.0-flash`).
 - **AST-Based Safety & Guardrails**: Enforces read-only execution (`SELECT` only), strictly blocking `INSERT`, `UPDATE`, `DELETE`, `DROP`, and SQL injection patterns.
+- **Deep Data Profiling & Statistics**: Computes null distribution, cardinality, numeric bounds (min, max, mean, median), text lengths, and automated quality indicators (`PRIMARY_KEY_CANDIDATE`, `HIGH_NULLS`, `CONSTANT`).
+- **SQL Execution Plan Analysis**: Integrated SQLite query planning with `EXPLAIN` to detect full table scans and recommend index optimizations.
+- **Data Export Engine**: Export tabular query results directly to CSV or structured JSON formats.
 - **Interactive Query Results**: Paginated, sortable tabular view with execution metadata, elapsed execution time, and row counts.
 - **Audit & History Log**: Real-time query history tracking with generated SQL snippets and execution outcomes.
 - **Modern Dark UI**: Engineered with Next.js 16, React 19, Tailwind CSS, Lucide icons, and shadcn/ui primitives.
 - **Per-User LLM Configuration**: Customizable API keys and model selection options with secure client-side storage policies.
 
 ---
+
 
 ## 🛠️ Tech Stack
 

@@ -363,6 +363,101 @@ Content-Type: application/json
 
 ---
 
+### Profile Table & Column Statistics
+
+Compute comprehensive statistical distributions, missingness metrics, cardinality ratios, and automated data quality indicators for any table.
+
+```http
+GET /profile/{table_name}
+```
+
+**Parameters:**
+- `table_name` (path, required) - Target table name to profile
+
+**Response:**
+```json
+{
+  "success": true,
+  "table_name": "users",
+  "row_count": 1500,
+  "column_count": 5,
+  "columns": [
+    {
+      "name": "id",
+      "type": "INTEGER",
+      "total_count": 1500,
+      "null_count": 0,
+      "null_percentage": 0.0,
+      "distinct_count": 1500,
+      "uniqueness_ratio": 1.0,
+      "min_value": 1,
+      "max_value": 1500,
+      "mean_value": 750.5,
+      "median_value": 750.0,
+      "zero_count": 0,
+      "min_length": null,
+      "max_length": null,
+      "avg_length": null,
+      "top_values": [],
+      "quality_flags": [
+        "PRIMARY_KEY_CANDIDATE"
+      ]
+    },
+    {
+      "name": "email",
+      "type": "TEXT",
+      "total_count": 1500,
+      "null_count": 15,
+      "null_percentage": 1.0,
+      "distinct_count": 1485,
+      "uniqueness_ratio": 0.99,
+      "min_value": null,
+      "max_value": null,
+      "mean_value": null,
+      "median_value": null,
+      "zero_count": null,
+      "min_length": 11,
+      "max_length": 42,
+      "avg_length": 22.4,
+      "top_values": [
+        {
+          "value": "user@example.com",
+          "count": 3,
+          "percentage": 0.2
+        }
+      ],
+      "quality_flags": [
+        "HIGH_CARDINALITY"
+      ]
+    }
+  ],
+  "quality_summary": {
+    "total_rows": 1500,
+    "total_columns": 5,
+    "has_missing_data": true,
+    "columns_with_nulls": ["email"],
+    "primary_key_candidates": ["id"],
+    "constant_columns": []
+  }
+}
+```
+
+**Quality Flags:**
+- `PRIMARY_KEY_CANDIDATE` - 100% unique, zero null values
+- `HIGH_NULLS` - More than 50% missing values
+- `ALL_NULLS` - 100% missing values across all rows
+- `CONSTANT` - Single distinct value across all rows (zero variance)
+- `HIGH_CARDINALITY` - Over 90% distinct ratio on non-unique columns
+
+**Status Codes:**
+- `200` - Table profiled successfully
+- `400` - Invalid table name format
+- `404` - Table not found
+- `429` - Rate limit exceeded (30 requests/minute)
+
+---
+
+
 ## Error Handling
 
 All errors follow this format:
