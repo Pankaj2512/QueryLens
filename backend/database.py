@@ -448,3 +448,80 @@ def get_table_profile(table_name: str) -> dict[str, Any]:
     except Exception as e:
         return {"error": str(e)}
 
+
+def get_schema_relationships() -> dict[str, Any]:
+    """Discover explicit foreign keys and infer semantic join relationships across tables."""
+    try:
+        inspector = inspect(engine)
+        table_names = inspector.get_table_names()
+        relationships: list[dict[str, Any]] = []
+        seen_pairs: set[tuple[str, str, str, str]] = set()
+
+        table_columns: dict[str, list[dict[str, Any]]] = {}
+        for t in table_names:
+            table_columns[t] = inspector.get_columns(t)
+
+        # 1. Inspect explicit foreign keys
+        for tbl in table_names:
+            fks = inspector.get_foreign_keys(tbl)
+            for fk in fks:
+                referred_table = fk.get("referred_table")
+                constrained_cols = fk.get("constrained_columns", [])
+                referred_cols = fk.get("referred_columns", [])
+                if referred_table and constrained_cols and referred_cols:
+                    pair_key = (tbl, constrained_cols[0], referred_table, referred_cols[0])
+                    if pair_key not in seen_pairs:
+                        seen_pairs.add(pair_key)
+                        relationships.append({
+                            "source_table": tbl,
+                            "source_column": constrained_cols[0],
+                            "target_table": referred_table,
+                            "target_column": referred_cols[0],
+                            "relationship_type": "many-to-one",
+                            "confidence": 1.0,
+                            "source": "explicit_fk",
+                        })
+
+        # 2. Heuristic inference across naming conventions
+        for source_tbl, s_cols in table_columns.items():
+            for s_col in s_cols:
+                s_name = s_col["name"].lower()
+
+                for target_tbl, t_cols in table_columns.items():
+                    if source_tbl == target_tbl:
+                        continue
+
+                    t_col_names = [c["name"].lower() for c in t_cols]
+                    target_singular = target_tbl.rstrip("s").lower()
+
+                    # Check pattern 1: source has `<target_singular>_id` or `<target_table>_id`
+                    matches_target_pk = (
+                        (s_name == f"{target_singular}_id" or s_name == f"{target_tbl.lower()}_id")
+                        and ("id" in t_col_names or s_name in t_col_names)
+                    )
+
+                    target_col = "id" if "id" in t_col_names else s_name
+
+                    if matches_target_pk and target_col in t_col_names:
+                        pair_key = (source_tbl, s_col["name"], target_tbl, target_col)
+                        if pair_key not in seen_pairs:
+                            seen_pairs.add(pair_key)
+                            relationships.append({
+                                "source_table": source_tbl,
+                                "source_column": s_col["name"],
+                                "target_table": target_tbl,
+                                "target_column": target_col,
+                                "relationship_type": "many-to-one",
+                                "confidence": 0.85,
+                                "source": "inferred_name_convention",
+                            })
+
+        return {
+            "success": True,
+            "tables_inspected": table_names,
+            "relationship_count": len(relationships),
+            "relationships": relationships,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+

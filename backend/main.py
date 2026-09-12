@@ -38,6 +38,7 @@ from database import (
     export_table_data,
     explain_query_plan,
     get_table_profile,
+    get_schema_relationships,
     DATA_DIR,
     MAX_QUERY_ROWS,
     MAX_HISTORY_LIMIT,
@@ -281,6 +282,17 @@ async def list_tables():
     }
 
 
+@app.get("/relationships")
+@app.get("/schema/relationships")
+@limiter.limit("60/minute")
+async def list_schema_relationships(request: Request) -> dict[str, Any]:
+    """Discover explicit foreign keys and infer semantic join relationships across tables."""
+    result = get_schema_relationships()
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+    return result
+
+
 @app.get("/schema/{table_name}")
 async def get_schema(table_name: str):
     """Get schema for a specific table."""
@@ -502,7 +514,6 @@ async def profile_table(request: Request, table_name: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=result["error"])
 
     return result
-
 
 
 if __name__ == "__main__":

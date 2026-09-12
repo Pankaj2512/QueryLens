@@ -397,6 +397,67 @@ class TestProfileEndpoint:
         assert response.status_code == 400
 
 
+class TestSchemaRelationships:
+    """Schema relationships and join path inference tests."""
+
+    def test_get_relationships_endpoint(self):
+        """Test GET /relationships returns valid structure."""
+        response = client.get("/relationships")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "tables_inspected" in data
+        assert "relationships" in data
+        assert "relationship_count" in data
+
+    def test_schema_relationships_alias(self):
+        """Test GET /schema/relationships alias endpoint."""
+        response = client.get("/schema/relationships")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+
+    def test_inferred_relationship_detection(self):
+        """Test foreign key / relationship inference across related tables."""
+        # Create users table
+        client.post(
+            "/create-table",
+            json={
+                "name": "rel_users",
+                "columns": [
+                    {"name": "id", "type": "INTEGER"},
+                    {"name": "username", "type": "TEXT"},
+                ],
+            },
+        )
+        # Create orders table with foreign key naming convention
+        client.post(
+            "/create-table",
+            json={
+                "name": "rel_orders",
+                "columns": [
+                    {"name": "id", "type": "INTEGER"},
+                    {"name": "rel_user_id", "type": "INTEGER"},
+                    {"name": "total", "type": "REAL"},
+                ],
+            },
+        )
+
+        response = client.get("/relationships")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        # Check if relationship was inferred
+        rels = data["relationships"]
+        matched = [
+            r for r in rels
+            if r["source_table"] == "rel_orders" and r["target_table"] == "rel_users"
+        ]
+        assert len(matched) >= 1
+        assert matched[0]["relationship_type"] == "many-to-one"
+        assert matched[0]["confidence"] > 0.8
+
+
 
 @pytest.fixture(scope="session", autouse=True)
 def setup():

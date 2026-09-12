@@ -457,6 +457,51 @@ GET /profile/{table_name}
 
 ---
 
+### Get Schema Relationships (Foreign Keys & Joins)
+
+Discover explicit database foreign keys and infer semantic join relationships across tables based on naming conventions and primary key mappings.
+
+**Endpoint:** `GET /relationships`  
+**Alias:** `GET /schema/relationships`  
+**Rate Limit:** 60 requests/minute
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "tables_inspected": ["customers", "orders", "products"],
+  "relationship_count": 2,
+  "relationships": [
+    {
+      "source_table": "orders",
+      "source_column": "customer_id",
+      "target_table": "customers",
+      "target_column": "id",
+      "relationship_type": "many-to-one",
+      "confidence": 1.0,
+      "source": "explicit_fk"
+    },
+    {
+      "source_table": "order_items",
+      "source_column": "product_id",
+      "target_table": "products",
+      "target_column": "id",
+      "relationship_type": "many-to-one",
+      "confidence": 0.85,
+      "source": "inferred_name_convention"
+    }
+  ]
+}
+```
+
+**Status Codes:**
+- `200` - Relationships discovered successfully
+- `500` - Database inspection error
+- `429` - Rate limit exceeded (60 requests/minute)
+
+---
+
 
 ## Error Handling
 
